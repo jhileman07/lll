@@ -1,8 +1,11 @@
 #pragma once
 
 #include <cstdint>
-#include <list>
 #include <map>
+#include <deque>
+#include <optional>
+#include <unordered_map>
+#include <limits>
 
 enum class Side : uint8_t { BUY, SELL };
 
@@ -18,10 +21,16 @@ struct Order {
   Side side;
 };
 
+// struct Level {
+//     uint32_t volume;
+//     std::deque<IdType> levelOrders;
+// };
+
 // You CAN and SHOULD change this
 struct Orderbook {
-  std::map<PriceType, std::list<Order>, std::greater<PriceType>> buyOrders;
-  std::map<PriceType, std::list<Order>> sellOrders;
+    std::map<PriceType, std::deque<IdType>, std::greater<>> buyOrders;
+    std::map<PriceType, std::deque<IdType>> sellOrders;
+    std::array<std::optional<Order>, std::numeric_limits<uint16_t>::max()> orders;
 };
 
 extern "C" {
