@@ -29,6 +29,16 @@ uint32_t process_orders(Orderbook &orderbook, Order &order, OrderMap &ordersMap,
       QuantityType trade = std::min(order.quantity, orderIt.quantity);
       order.quantity -= trade;
       orderIt.quantity -= trade;
+      switch (order.side) {
+        case Side::BUY:
+          orderbook.buyVolume[order.price] -= trade;
+          orderbook.sellVolume[orderIt.price] -= trade;
+          break;
+        case Side::SELL: default:
+          orderbook.buyVolume[orderIt.price] -= trade;
+          orderbook.sellVolume[order.price] -= trade;
+          break;
+      }
       ++matchCount;
 
       if (orderIt.quantity == 0) {
@@ -57,6 +67,7 @@ uint32_t match_order(Orderbook &orderbook, const Order &incoming) {
     matchCount = process_orders(orderbook, order, orderbook.sellOrders, std::less<>());
     if (order.quantity > 0) {
       orderbook.buyOrders[order.price].push_back(order.id);
+      orderbook.buyVolume[order.price] += order.quantity;
       orderbook.orders[order.id] = order;
     }
   } else { // Side::SELL
@@ -64,69 +75,58 @@ uint32_t match_order(Orderbook &orderbook, const Order &incoming) {
     matchCount = process_orders(orderbook, order, orderbook.buyOrders, std::greater<>());
     if (order.quantity > 0) {
       orderbook.sellOrders[order.price].push_back(order.id);
+      orderbook.sellVolume[order.price] += order.quantity;
       orderbook.orders[order.id] = order;
     }
   }
   return matchCount;
 }
 
+template <typename Orders, typename VolumeMap>
+bool modify_order_in_map(Orders &orders, Side side, VolumeMap &volumeMap, IdType order_id,
+                         QuantityType new_quantity) {
+  auto &order = orders[order_id];
+  if (!order.has_value()) return false;
+  if (order.value().side != side) return false;
+
+  volumeMap[order.value().price] += new_quantity - order.value().quantity;
+  if (new_quantity == 0) {
+    orders[order_id] = std::nullopt;
+    return true;
+  }
+  order.value().quantity = new_quantity;
+  return true;
+}
+
 // OG FUNCTION
 void modify_order_by_id(Orderbook &orderbook, IdType order_id,
                         QuantityType new_quantity) {
-  if (!orderbook.orders[order_id].has_value()) return;
-  if (new_quantity == 0) {
-    orderbook.orders[order_id] = std::nullopt;
+  if (modify_order_in_map(orderbook.orders, Side::BUY, orderbook.buyVolume, order_id, new_quantity))
     return;
-  }
-  orderbook.orders[order_id].value().quantity = new_quantity;
+  modify_order_in_map(orderbook.orders, Side::SELL, orderbook.sellVolume, order_id, new_quantity);
 }
 
-template <typename OrderMap>
-std::optional<Order> lookup_order_in_map(const Orderbook &orderbook, const OrderMap &ordersMap, const IdType order_id) {
-  for (const auto &[price, idList] : ordersMap) {
-    for (const auto &id : idList) {
-      if (id == order_id) {
-        return orderbook.orders[id];
-      }
-    }
-  }
-  return std::nullopt;
+std::optional<Order> lookup_order_in_map(const Orderbook &orderbook, const IdType order_id) {
+  return orderbook.orders[order_id];
 }
 
 // OG FUNCTION
 uint32_t get_volume_at_level(Orderbook &orderbook, Side side,
                              PriceType quantity) {
-  uint32_t total = 0;
-  if (side == Side::BUY) {
-    const auto buy_orders = orderbook.buyOrders.find(quantity);
-    if (buy_orders == orderbook.buyOrders.end()) {
-      return 0;
-    }
-    for (const auto &id : buy_orders->second) {
-      const auto order = orderbook.orders[id];
-      if (!order.has_value()) continue;
-      total += order.value().quantity;
-    }
-  } else if (side == Side::SELL) {
-    const auto sell_orders = orderbook.sellOrders.find(quantity);
-    if (sell_orders == orderbook.sellOrders.end()) {
-      return 0;
-    }
-    for (const auto &id : sell_orders->second) {
-      const auto order = orderbook.orders[id];
-      if (!order.has_value()) continue;
-      total += order.value().quantity;
-    }
+  switch (side) {
+    case Side::BUY:
+      return orderbook.buyVolume[quantity];
+    case Side::SELL: default:
+      return orderbook.sellVolume[quantity];
   }
-  return total;
 }
 
 // Functions below here don't need to be performant. Just make sure they're
 // correct
 // OG FUNCTION
 Order lookup_order_by_id(Orderbook &orderbook, IdType order_id) {
-  const auto order1 = lookup_order_in_map(orderbook, orderbook.buyOrders, order_id);
-  const auto order2 = lookup_order_in_map(orderbook, orderbook.sellOrders, order_id);
+  const auto order1 = lookup_order_in_map(orderbook, order_id);
+  const auto order2 = lookup_order_in_map(orderbook, order_id);
   if (order1.has_value())
     return *order1;
   if (order2.has_value())

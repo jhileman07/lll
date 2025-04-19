@@ -6,6 +6,7 @@
 #include <optional>
 #include <unordered_map>
 #include <limits>
+#include <vector>
 
 enum class Side : uint8_t { BUY, SELL };
 
@@ -21,16 +22,15 @@ struct Order {
   Side side;
 };
 
-// struct Level {
-//     uint32_t volume;
-//     std::deque<IdType> levelOrders;
-// };
-
 // You CAN and SHOULD change this
 struct Orderbook {
-    std::map<PriceType, std::deque<IdType>, std::greater<>> buyOrders;
-    std::map<PriceType, std::deque<IdType>> sellOrders;
+    std::map<PriceType, std::vector<IdType>, std::greater<>> buyOrders;
+    std::map<PriceType, std::vector<IdType>> sellOrders;
+
     std::array<std::optional<Order>, std::numeric_limits<uint16_t>::max()> orders;
+
+    std::array<uint32_t, std::numeric_limits<uint16_t>::max()> buyVolume{};
+    std::array<uint32_t, std::numeric_limits<uint16_t>::max()> sellVolume{};
 };
 
 extern "C" {
