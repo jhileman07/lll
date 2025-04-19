@@ -1,11 +1,8 @@
 #pragma once
 
 #include <cstdint>
-#include <map>
-#include <deque>
 #include <optional>
 #include <unordered_map>
-#include <limits>
 #include <vector>
 #include <set>
 
@@ -24,17 +21,19 @@ struct Order {
 };
 
 struct Level {
-    uint32_t volume = 0;
     std::vector<IdType> orders;
+    uint32_t volume = 0;
 };
 
 constexpr uint16_t MAX = 10'000;
 constexpr uint16_t PRICE_MAX = 4500;
 
+
 // You CAN and SHOULD change this
 struct Orderbook {
     std::set<PriceType, std::greater<>> buyOrders;
     std::array<Level, PRICE_MAX> buyLevels;
+
     std::set<PriceType> sellOrders;
     std::array<Level, PRICE_MAX> sellLevels;
 

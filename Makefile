@@ -1,6 +1,6 @@
 CXX = g++
-CXXFLAGS = -std=c++17 -Wall -Wextra -O2
-DEBUGFLAGS = -std=c++17 -Wall -Wextra -O0 -g
+CXXFLAGS = -std=c++20 -Wall -Wextra -Ofast
+DEBUGFLAGS = -std=c++20 -Wall -Wextra -Ofast -g
 
 MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
