@@ -9,20 +9,17 @@
 // Templated helper to process matching orders.
 // The Condition predicate takes the price level and the incoming order price
 // and returns whether the level qualifies.
-template <typename OrderMap, typename LevelMap, typename Condition>
-inline __attribute__((always_inline, hot)) uint32_t process_orders(Orderbook &orderbook, const Order &order, QuantityType &q, OrderMap &ordersMap, LevelMap &levelsMap, const Condition cond) {
+template <typename LevelMap>
+inline __attribute__((always_inline, hot)) uint32_t process_ask_order(Orderbook &ob, const Order &order, QuantityType &q, LevelMap &levelsMap) {
   uint32_t matchCount = 0;
-  auto it = ordersMap.begin();
 
-  while (it != ordersMap.end() && q > 0 &&
-         (*it == order.price || cond(*it, order.price))) {
-
-    PriceType price = *it;
+  while (q > 0 && ob.bb >= order.price) {
+    PriceType price = ob.bb;
     auto &level = levelsMap[price];
 
     auto &ordersAtPrice = level.orders;
     for (auto idIt = ordersAtPrice.begin(); idIt != ordersAtPrice.end() && q > 0;) {
-      auto &maybeOrder = orderbook.orders[*idIt];
+      auto &maybeOrder = ob.orders[*idIt];
       if (!maybeOrder.has_value()) {
         idIt = ordersAtPrice.erase(idIt);
         continue;
@@ -44,9 +41,48 @@ inline __attribute__((always_inline, hot)) uint32_t process_orders(Orderbook &or
     }
 
     if (ordersAtPrice.empty()) {
-      it = ordersMap.erase(it);
-    } else {
-      ++it;
+      ob.buyBits.clear(price);
+      ob.bb = ob.buyBits.find_prev(ob.bb);
+    }
+  }
+
+  return matchCount;
+}
+
+template <typename LevelMap>
+inline __attribute__((always_inline, hot)) uint32_t process_bid_order(Orderbook &ob, const Order &order, QuantityType &q, LevelMap &levelsMap) {
+  uint32_t matchCount = 0;
+
+  while (q > 0 && ob.ba <= order.price) {
+    PriceType price = ob.ba;
+    auto &level = levelsMap[price];
+
+    auto &ordersAtPrice = level.orders;
+    for (auto idIt = ordersAtPrice.begin(); idIt != ordersAtPrice.end() && q > 0;) {
+      auto &maybeOrder = ob.orders[*idIt];
+      if (!maybeOrder.has_value()) {
+        idIt = ordersAtPrice.erase(idIt);
+        continue;
+      }
+
+      auto &orderIt = maybeOrder.value();
+      QuantityType trade = std::min(q, orderIt.quantity);
+      q -= trade;
+      orderIt.quantity -= trade;
+      level.volume -= trade;
+      ++matchCount;
+
+      if (orderIt.quantity == 0) {
+        maybeOrder = std::nullopt;
+        idIt = ordersAtPrice.erase(idIt);
+      } else {
+        ++idIt;
+      }
+    }
+
+    if (ordersAtPrice.empty()) {
+      ob.sellBits.clear(price);
+      ob.ba = ob.sellBits.find_next(ob.ba);
     }
   }
 
@@ -60,21 +96,25 @@ uint32_t match_order(Orderbook &orderbook, const Order &incoming) {
   switch (incoming.side) {
     case Side::BUY:
       // For a BUY, match with sell orders priced at or below the order's price.
-      if (*orderbook.sellOrders.begin() <= incoming.price) matchCount = process_orders(orderbook, incoming, q, orderbook.sellOrders, orderbook.sellLevels, std::less<>());
+      if (orderbook.ba <= incoming.price) matchCount = process_bid_order(orderbook, incoming, q,orderbook.sellLevels);
       if (q > 0) {
-        orderbook.buyOrders.insert(incoming.price);
+        // orderbook.buyOrders.insert(incoming.price);
+        orderbook.buyBits.set(incoming.price);
+        orderbook.bb = std::max(orderbook.bb, incoming.price);
         orderbook.buyLevels[incoming.price].orders.emplace_back(incoming.id);
-        orderbook.buyLevels[incoming.price].volume += incoming.quantity;
+        orderbook.buyLevels[incoming.price].volume += q;
         orderbook.orders[incoming.id] = {.id = incoming.id, .price = incoming.price, .quantity = q, .side = Side::BUY};
       }
       break;
     case Side::SELL: default:
       // For a SELL, match with buy orders priced at or above the order's price.
-      if (*orderbook.buyOrders.begin() >= incoming.price) matchCount = process_orders(orderbook, incoming, q, orderbook.buyOrders, orderbook.buyLevels, std::greater<>());
+      if (orderbook.bb >= incoming.price) matchCount = process_ask_order(orderbook, incoming, q, orderbook.buyLevels);
       if (q > 0) {
-        orderbook.sellOrders.insert(incoming.price);
+        // orderbook.sellOrders.insert(incoming.price);
+        orderbook.sellBits.set(incoming.price);
+        orderbook.ba = std::min(orderbook.ba, incoming.price);
         orderbook.sellLevels[incoming.price].orders.emplace_back(incoming.id);
-        orderbook.sellLevels[incoming.price].volume += incoming.quantity;
+        orderbook.sellLevels[incoming.price].volume += q;
         orderbook.orders[incoming.id] = {.id = incoming.id, .price = incoming.price, .quantity = q, .side = Side::SELL};
       }
   }

@@ -4,7 +4,9 @@
 #include <optional>
 #include <unordered_map>
 #include <vector>
+#include "bitset.hpp"
 #include <set>
+#include <bitset>
 
 enum class Side : uint8_t { BUY, SELL };
 
@@ -21,8 +23,8 @@ struct Order {
 };
 
 struct Level {
-    std::vector<IdType> orders;
     uint32_t volume = 0;
+    std::vector<IdType> orders;
 };
 
 constexpr uint16_t MAX = 10'000;
@@ -31,13 +33,18 @@ constexpr uint16_t PRICE_MAX = 4500;
 
 // You CAN and SHOULD change this
 struct Orderbook {
-    std::set<PriceType, std::greater<>> buyOrders;
+    // std::set<PriceType, std::greater<>> buyOrders;
     std::array<Level, PRICE_MAX> buyLevels;
+    ChunkedBitset buyBits;
 
-    std::set<PriceType> sellOrders;
+    // std::set<PriceType> sellOrders;
     std::array<Level, PRICE_MAX> sellLevels;
+    ChunkedBitset sellBits;
 
     std::array<std::optional<Order>,MAX> orders;
+
+    PriceType bb = 0;
+    PriceType ba = PRICE_MAX - 1;
 };
 
 extern "C" {

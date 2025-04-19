@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++20 -Wall -Wextra -Ofast
+CXXFLAGS = -std=c++20 -Wall -Wextra -Ofast -march=native
 DEBUGFLAGS = -std=c++20 -Wall -Wextra -Ofast -g
 
 MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
