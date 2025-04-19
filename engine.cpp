@@ -9,8 +9,8 @@
 // Templated helper to process matching orders.
 // The Condition predicate takes the price level and the incoming order price
 // and returns whether the level qualifies.
-template <typename OrderMap, typename Condition>
-uint32_t process_orders(Orderbook &orderbook, Order &order, OrderMap &ordersMap, const Condition cond) {
+template <typename OrderMap, typename VolumeMap, typename Condition>
+uint32_t process_orders(Orderbook &orderbook, Order &order, OrderMap &ordersMap, VolumeMap &volumeMap, const Condition cond) {
   uint32_t matchCount = 0;
   auto it = ordersMap.begin();
 
@@ -29,16 +29,7 @@ uint32_t process_orders(Orderbook &orderbook, Order &order, OrderMap &ordersMap,
       QuantityType trade = std::min(order.quantity, orderIt.quantity);
       order.quantity -= trade;
       orderIt.quantity -= trade;
-      switch (order.side) {
-        case Side::BUY:
-          orderbook.buyVolume[order.price] -= trade;
-          orderbook.sellVolume[orderIt.price] -= trade;
-          break;
-        case Side::SELL: default:
-          orderbook.buyVolume[orderIt.price] -= trade;
-          orderbook.sellVolume[order.price] -= trade;
-          break;
-      }
+      volumeMap[orderIt.price] -= trade;
       ++matchCount;
 
       if (orderIt.quantity == 0) {
@@ -64,7 +55,7 @@ uint32_t match_order(Orderbook &orderbook, const Order &incoming) {
 
   if (Order order = incoming; order.side == Side::BUY) {
     // For a BUY, match with sell orders priced at or below the order's price.
-    matchCount = process_orders(orderbook, order, orderbook.sellOrders, std::less<>());
+    matchCount = process_orders(orderbook, order, orderbook.sellOrders, orderbook.sellVolume, std::less<>());
     if (order.quantity > 0) {
       orderbook.buyOrders[order.price].push_back(order.id);
       orderbook.buyVolume[order.price] += order.quantity;
@@ -72,7 +63,7 @@ uint32_t match_order(Orderbook &orderbook, const Order &incoming) {
     }
   } else { // Side::SELL
     // For a SELL, match with buy orders priced at or above the order's price.
-    matchCount = process_orders(orderbook, order, orderbook.buyOrders, std::greater<>());
+    matchCount = process_orders(orderbook, order, orderbook.buyOrders, orderbook.buyVolume, std::greater<>());
     if (order.quantity > 0) {
       orderbook.sellOrders[order.price].push_back(order.id);
       orderbook.sellVolume[order.price] += order.quantity;
