@@ -9,13 +9,21 @@
 // Templated helper to process matching orders.
 // The Condition predicate takes the price level and the incoming order price
 // and returns whether the level qualifies.
-template <typename LevelMap>
-inline __attribute__((always_inline, hot)) uint32_t process_ask_order(Orderbook &ob, const Order &order, QuantityType &q, LevelMap &levelsMap) {
+template <typename LevelMap, typename Comp>
+inline __attribute__((always_inline, hot)) uint32_t process_order(
+    Orderbook &ob,
+    const Order &order,
+    QuantityType &q,
+    LevelMap &levelsMap,
+    ChunkedBitset &bits,
+    PriceType &p,
+    int (ChunkedBitset::*next)(int) const,
+    Comp comp
+) {
   uint32_t matchCount = 0;
 
-  while (q > 0 && ob.bb >= order.price) {
-    PriceType price = ob.bb;
-    auto &level = levelsMap[price];
+  while (q > 0 && (p == order.price || comp(p, order.price))) {
+    auto &level = levelsMap[p];
 
     auto &ordersAtPrice = level.orders;
     for (auto idIt = ordersAtPrice.begin(); idIt != ordersAtPrice.end() && q > 0;) {
@@ -41,48 +49,8 @@ inline __attribute__((always_inline, hot)) uint32_t process_ask_order(Orderbook 
     }
 
     if (ordersAtPrice.empty()) {
-      ob.buyBits.clear(price);
-      ob.bb = ob.buyBits.find_prev(ob.bb);
-    }
-  }
-
-  return matchCount;
-}
-
-template <typename LevelMap>
-inline __attribute__((always_inline, hot)) uint32_t process_bid_order(Orderbook &ob, const Order &order, QuantityType &q, LevelMap &levelsMap) {
-  uint32_t matchCount = 0;
-
-  while (q > 0 && ob.ba <= order.price) {
-    PriceType price = ob.ba;
-    auto &level = levelsMap[price];
-
-    auto &ordersAtPrice = level.orders;
-    for (auto idIt = ordersAtPrice.begin(); idIt != ordersAtPrice.end() && q > 0;) {
-      auto &maybeOrder = ob.orders[*idIt];
-      if (!maybeOrder.has_value()) {
-        idIt = ordersAtPrice.erase(idIt);
-        continue;
-      }
-
-      auto &orderIt = maybeOrder.value();
-      QuantityType trade = std::min(q, orderIt.quantity);
-      q -= trade;
-      orderIt.quantity -= trade;
-      level.volume -= trade;
-      ++matchCount;
-
-      if (orderIt.quantity == 0) {
-        maybeOrder = std::nullopt;
-        idIt = ordersAtPrice.erase(idIt);
-      } else {
-        ++idIt;
-      }
-    }
-
-    if (ordersAtPrice.empty()) {
-      ob.sellBits.clear(price);
-      ob.ba = ob.sellBits.find_next(ob.ba);
+      bits.clear(p);
+      p = (bits.*next)(p);
     }
   }
 
@@ -96,7 +64,16 @@ uint32_t match_order(Orderbook &orderbook, const Order &incoming) {
   switch (incoming.side) {
     case Side::BUY:
       // For a BUY, match with sell orders priced at or below the order's price.
-      if (orderbook.ba <= incoming.price) matchCount = process_bid_order(orderbook, incoming, q,orderbook.sellLevels);
+        if (orderbook.ba <= incoming.price) matchCount = process_order(
+                                                              orderbook,
+                                                              incoming,
+                                                              q,
+                                                              orderbook.sellLevels,
+                                                              orderbook.sellBits,
+                                                              orderbook.ba,
+                                                              &ChunkedBitset::find_next,
+                                                              std::less<>()
+                                                          );
       if (q > 0) {
         // orderbook.buyOrders.insert(incoming.price);
         orderbook.buyBits.set(incoming.price);
@@ -108,7 +85,16 @@ uint32_t match_order(Orderbook &orderbook, const Order &incoming) {
       break;
     case Side::SELL: default:
       // For a SELL, match with buy orders priced at or above the order's price.
-      if (orderbook.bb >= incoming.price) matchCount = process_ask_order(orderbook, incoming, q, orderbook.buyLevels);
+    if (orderbook.bb >= incoming.price) matchCount = process_order(
+                                                          orderbook,
+                                                          incoming,
+                                                          q,
+                                                          orderbook.buyLevels,
+                                                          orderbook.buyBits,
+                                                          orderbook.bb,
+                                                          &ChunkedBitset::find_prev,
+                                                          std::greater<>()
+                                                      );
       if (q > 0) {
         // orderbook.sellOrders.insert(incoming.price);
         orderbook.sellBits.set(incoming.price);
