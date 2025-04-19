@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <limits>
 #include <vector>
+#include <set>
 
 enum class Side : uint8_t { BUY, SELL };
 
@@ -22,15 +23,22 @@ struct Order {
   Side side;
 };
 
+struct Level {
+    uint32_t volume = 0;
+    std::vector<IdType> orders;
+};
+
+constexpr uint16_t MAX = 10'000;
+constexpr uint16_t PRICE_MAX = 4500;
+
 // You CAN and SHOULD change this
 struct Orderbook {
-    std::map<PriceType, std::vector<IdType>, std::greater<>> buyOrders;
-    std::map<PriceType, std::vector<IdType>> sellOrders;
+    std::set<PriceType, std::greater<>> buyOrders;
+    std::array<Level, PRICE_MAX> buyLevels;
+    std::set<PriceType> sellOrders;
+    std::array<Level, PRICE_MAX> sellLevels;
 
-    std::array<std::optional<Order>, std::numeric_limits<uint16_t>::max()> orders;
-
-    std::array<uint32_t, std::numeric_limits<uint16_t>::max()> buyVolume{};
-    std::array<uint32_t, std::numeric_limits<uint16_t>::max()> sellVolume{};
+    std::array<std::optional<Order>,MAX> orders;
 };
 
 extern "C" {
