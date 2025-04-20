@@ -1,3 +1,9 @@
 tests
 engine.so
 engine.o
+.gdb_history
+flame.svg
+out.perf
+*.data
+perf.data.old
+.idea

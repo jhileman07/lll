@@ -1,6 +1,8 @@
 #include "engine.hpp"
 #include <functional>
 #include <stdexcept>
+#include <functional>
+#include <iostream>
 
 // This is an example correct implementation
 // It is INTENTIONALLY suboptimal
@@ -17,21 +19,17 @@ inline __attribute__((always_inline, hot)) uint32_t process_order(
     LevelMap &levelsMap,
     ChunkedBitset &bits,
     PriceType &p,
-    int (ChunkedBitset::*next)(int) const,
+    uint16_t (ChunkedBitset::*next)(uint16_t) const,
     Comp comp
 ) {
   uint32_t matchCount = 0;
 
-  while (q > 0 && (p == order.price || comp(p, order.price))) {
+  for (; q > 0 && comp(p, order.price); bits.clear(p), p = (bits.*next)(p)) {
     auto &level = levelsMap[p];
 
     auto &ordersAtPrice = level.orders;
-    for (auto idIt = ordersAtPrice.begin(); idIt != ordersAtPrice.end() && q > 0;) {
+    for (auto idIt = ordersAtPrice.begin(); idIt != ordersAtPrice.end() && q > 0 && ob.orders[*idIt].has_value();) {
       auto &maybeOrder = ob.orders[*idIt];
-      if (!maybeOrder.has_value()) {
-        idIt = ordersAtPrice.erase(idIt);
-        continue;
-      }
 
       auto &orderIt = maybeOrder.value();
       QuantityType trade = std::min(q, orderIt.quantity);
@@ -47,11 +45,7 @@ inline __attribute__((always_inline, hot)) uint32_t process_order(
         ++idIt;
       }
     }
-
-    if (ordersAtPrice.empty()) {
-      bits.clear(p);
-      p = (bits.*next)(p);
-    }
+    if (q == 0) return matchCount;
   }
 
   return matchCount;
@@ -72,10 +66,9 @@ uint32_t match_order(Orderbook &orderbook, const Order &incoming) {
                                                               orderbook.sellBits,
                                                               orderbook.ba,
                                                               &ChunkedBitset::find_next,
-                                                              std::less<>()
+                                                              std::less_equal<>()
                                                           );
       if (q > 0) {
-        // orderbook.buyOrders.insert(incoming.price);
         orderbook.buyBits.set(incoming.price);
         orderbook.bb = std::max(orderbook.bb, incoming.price);
         orderbook.buyLevels[incoming.price].orders.emplace_back(incoming.id);
@@ -93,10 +86,9 @@ uint32_t match_order(Orderbook &orderbook, const Order &incoming) {
                                                           orderbook.buyBits,
                                                           orderbook.bb,
                                                           &ChunkedBitset::find_prev,
-                                                          std::greater<>()
+                                                          std::greater_equal<>()
                                                       );
       if (q > 0) {
-        // orderbook.sellOrders.insert(incoming.price);
         orderbook.sellBits.set(incoming.price);
         orderbook.ba = std::min(orderbook.ba, incoming.price);
         orderbook.sellLevels[incoming.price].orders.emplace_back(incoming.id);
