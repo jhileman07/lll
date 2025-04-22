@@ -25,6 +25,7 @@ struct Order {
 constexpr uint16_t MAX = 10'000;
 
 struct Level {
+    size_t begin = 0;
     uint32_t volume = 0;
     std::vector<IdType> orders;
 };
@@ -32,9 +33,11 @@ struct Level {
 // You CAN and SHOULD change this
 struct Orderbook {
     std::array<Level, PRICE_MAX> buyLevels;
+    std::array<bool, PRICE_MAX> buyFlag{};
     ChunkedBitset buyBits;
 
     std::array<Level, PRICE_MAX> sellLevels;
+    std::array<bool, PRICE_MAX> sellFlag{};
     ChunkedBitset sellBits;
 
     std::array<std::optional<Order>,MAX> orders;
